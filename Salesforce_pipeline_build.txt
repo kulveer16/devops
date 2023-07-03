@@ -1,0 +1,88 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+stages:
+  - stage: CI
+    jobs:
+      - job: Salesforce_CI
+        pool:
+          name: Default
+
+        steps:
+        
+        - task: SonarCloudPrepare@1
+          displayName: Sonar Prepare
+          inputs:
+            SonarCloud: 'sonarcloud'
+            organization: 'dreamhouse-salesforce'
+            scannerMode: 'CLI'
+            configMode: 'manual'
+            cliProjectKey: 'learning1617_Dreamhouse-Salesforce'
+            cliProjectName: 'Dreamhouse-Salesforce'
+            cliSources: '.'
+        - task: UseNode@1
+          displayName: Conver force-app to Deploy
+          inputs:
+            version: '18.x'
+            checkLatest: true
+        - script: |
+            sfdx force:source:convert -r ./force-app -d ./toDeploy
+          displayName: 'Convert to deploy source'
+        - task: CopyFiles@2
+          displayName: Copy toDeploy content to artifact directory
+          inputs:
+            SourceFolder: toDeploy
+            TargetFolder: '$(Build.ArtifactStagingDirectory)/toDeploy'  
+        
+        - task: SonarCloudAnalyze@1
+          displayName: Sonar Analysis
+        - task: SonarCloudPublish@1
+          displayName: Sonar QualityGate Publish
+          inputs:
+            pollingTimeoutSec: '300'
+        - task: dependency-check-build-task@6
+          displayName: Dependency Check
+          inputs:
+            projectName: 'Dreamhouse-Salesforce'
+            scanPath: '.'
+            format: 'HTML'
+        
+       
+
+        - task: CmdLine@2
+          displayName: Test Results & Codecoverage
+          inputs:
+             script: 'sfdx force:source:deploy -g -w 999 --testlevel RunLocalTests -c -p force-app/main/default -u myhubOrg --junit --resultsdir $(Build.ArtifactStagingDirectory)/tests --coverageformatters cobertura --checkonly --verbose'
+          
+        - task: PublishTestResults@2
+          displayName: Publis Test Results to Pipeline
+          inputs:
+            testResultsFormat: 'JUnit'
+            testResultsFiles: '$(Build.ArtifactStagingDirectory)/tests/junit/junit.xml'
+            searchFolder: '$(Build.ArtifactStagingDirectory)/tests/junit/junit.xml'
+
+        - task: PublishCodeCoverageResults@1
+          displayName: Publish CodeCoverage to Pipeline
+          inputs:
+            codeCoverageTool: Cobertura
+            summaryFileLocation: $(Build.ArtifactStagingDirectory)/tests/coverage/cobertura.xml
+    
+      
+
+        -  task: CopyFiles@2
+           displayName: Copy Cert
+           inputs:
+              SourceFolder: buildfiles
+              TargetFolder: '$(Build.ArtifactStagingDirectory)/toDeploy/buildfiles'
+        -  task: PublishBuildArtifacts@1
+           displayName: Publish Artifact
+           inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+            ArtifactName: 'drop'
+            publishLocation: 'Container'       
+ 
